@@ -1,0 +1,6 @@
+[submodule "ansible/roles/libvirt-host"]
+	path = ansible/roles/libvirt-host
+	url = https://github.com/dmrub/ansible-role-libvirt-host
+[submodule "ansible/roles/libvirt-vm"]
+	path = ansible/roles/libvirt-vm
+	url = https://github.com/dmrub/ansible-role-libvirt-vm
