@@ -1,0 +1,9 @@
+*.swp
+*~
+*.retry
+*.pyc
+*.cache
+/backup
+/clm-config.ini
+/ansible-vars.yml
+/ansible-vault.yml

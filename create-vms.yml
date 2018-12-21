@@ -1,0 +1,48 @@
+---
+- name: Create VMs
+  hosts: hypervisor
+  roles:
+    - role: libvirt-host
+      libvirt_host_networks:
+        - name: br-vm
+          mode: nat
+          # bridge: virbr0
+          mac_address: 52:54:00:d7:7d:83
+          ip:
+            address: 192.168.70.1
+            netmask: 255.255.255.0
+            dhcp_range:
+              start: 192.168.70.2
+              end: 192.168.70.254
+
+    - role: libvirt-vm
+      libvirt_vm_uri: "qemu:///system"
+      libvirt_vms:
+        - state: present
+          name: 'vm1'
+          memory_mb: 2048
+          vcpus: 2
+          #cpu_mode: host-passthrough #host-model
+          volumes:
+            - name: 'centos-vm-1'
+              clone: 'dmrub-centos7.img'
+              device: 'disk'
+              format: 'qcow2'
+              capacity: '40GiB' # 400GB
+              pool: 'default'
+          interfaces:
+            - network: 'br-vm'
+
+        # - state: present
+        #   name: 'vm2'
+        #   memory_mb: 1024
+        #   vcpus: 1
+        #   volumes:
+        #     - name: 'centos-vm-2'
+        #       clone: 'dmrub-centos7.img'
+        #       device: 'disk'
+        #       format: 'qcow2'
+        #       capacity: '30GB' #200GB
+        #       pool: 'default'
+        #   interfaces:
+        #     - network: 'br-vm'

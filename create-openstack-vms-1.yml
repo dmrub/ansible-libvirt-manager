@@ -1,0 +1,147 @@
+---
+- name: Create VMs
+  hosts: hypervisor
+  vars:
+    guest_name: centos7
+    img_user: centos
+    domain: vm
+    volume_pool: default
+    libvirt_vm_uri: "qemu:///system"
+    libvirt_vms:
+      - state: present
+        name: 'os-vm1'
+        memory_mb: 2048
+        vcpus: 2
+        #cpu_mode: host-passthrough #host-model
+        volumes:
+          - name: 'centos-os-vm-1'
+            device: 'disk'
+            format: 'qcow2'
+            capacity: '30GiB'
+            clone: 'packer-centos-7-x86_64.qcow2'
+            pool: 'default'
+          - name: 'configuration.iso'
+            device: 'cdrom'
+            format: 'raw'
+            pool: 'default'
+        interfaces:
+          - network: 'br-vm'
+    libvirt_host_networks:
+      - name: br-vm
+        mode: nat
+        # bridge: virbr0
+        mac_address: 52:54:00:d7:7d:83
+        ip:
+          address: 192.168.70.1
+          netmask: 255.255.255.0
+          dhcp_range:
+            start: 192.168.70.2
+            end: 192.168.70.254
+  tasks:
+    - name: Create VM Networks
+      import_role:
+        name: libvirt-host
+
+    - name: Create VM configuration meta-data
+      copy:
+        content: |
+          instance-id: iid-{{ guest_name }};
+          hostname: {{ guest_name }}
+          local-hostname: {{ guest_name}}
+        dest: /tmp/meta-data
+    - name: Create VM configuration user-data
+      copy:
+        content: |
+          #cloud-config
+          password: centos
+          chpasswd: { expire: False }
+          ssh_pwauth: True
+          # upgrade packages on startup
+          package_upgrade: false
+          #run 'apt-get upgrade' or yum equivalent on first boot
+          apt_upgrade: false
+          #manage_etc_hosts: localhost
+          manage_etc_hosts: true
+          fqdn: {{ guest_name }}.{{ domain }}
+          #datasource_list:
+          #  - ConfigDrive
+          # install additional packages
+          #packages:
+          #  - mc
+          #  - htop
+          #  - language-pack-fr
+          # run commands
+          runcmd:
+          # install htop on centos/fedora
+          #  - [ sh, -c, "curl http://dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-2.noarch.rpm -o /tmp/epel-release.rpm" ]
+          #  - [ sh, -c, "yum install -y /tmp/epel-release.rpm" ]
+          #  - [ sh, -c, "yum install -y htop" ]
+          #ssh_authorized_keys:
+          #  - ssh-rsa AAAAB3NzaC1yc2QwAAADAQABAAa3BAQC0g+ZTxC7weoIJLUafOgrm+h...
+        dest: /tmp/user-data
+    - name: Creating ISO file required by cloud-init
+      command: >
+        genisoimage 
+        -input-charset utf8
+        -output /tmp/configuration.iso
+        -volid cidata
+        -joliet -rock
+        /tmp/user-data
+        /tmp/meta-data
+    - name: Read back ISO file information
+      command: qemu-img info --output json /tmp/configuration.iso
+      register: result
+    - name: Parse ISO file information from JSON format
+      set_fact:
+        configuration_iso: "{{ result.stdout | from_json }}"
+    - name: DEBUG
+      debug:
+        msg: "{{ configuration_iso }}"
+    - name: Delete volume for configuration ISO if exists
+      command: >
+        virsh -c {{ libvirt_vm_uri | quote }} 
+        vol-delete
+        --pool {{ volume_pool | quote }}
+        configuration.iso
+      register: command_result
+      failed_when: command_result.rc != 0 and "Storage volume not found" not in command_result.stderr
+    - name: Create volume for configuration ISO
+      command: >
+        virsh -c {{ libvirt_vm_uri | quote }} 
+        vol-create-as 
+        {{ volume_pool | quote }} 
+        configuration.iso
+        {{ configuration_iso['virtual-size'] | quote }}
+        --format {{ configuration_iso.format | quote }}
+    - name: Upload configuration ISO to volume
+      command: >
+        virsh -c {{ libvirt_vm_uri | quote }}
+        vol-upload
+        --pool {{ volume_pool | quote }}
+        configuration.iso /tmp/configuration.iso
+    - name: Remove temporary files
+      file:
+        state: absent
+        path: "{{ item }}"
+      with_list:
+        - /tmp/configuration.iso
+        - /tmp/meta-data
+        - /tmp/user-data
+
+    - name: Create VMs
+      import_role:
+        name: libvirt-vm
+
+        # - state: present
+        #   name: 'vm2'
+        #   memory_mb: 1024
+        #   vcpus: 1
+        #   volumes:
+        #     - name: 'centos-vm-2'
+        #       clone: 'dmrub-centos7.img'
+        #       device: 'disk'
+        #       format: 'qcow2'
+        #       capacity: '30GB' #200GB
+        #       pool: 'default'
+        #   interfaces:
+        #     - network: 'br-vm'

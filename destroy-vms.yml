@@ -1,0 +1,11 @@
+---
+- name: Create VMs
+  hosts: hypervisor
+  roles:
+    - role: libvirt-vm
+      libvirt_vms:
+        - state: absent
+          name: 'vm1'
+
+        - state: absent
+          name: 'vm2'
