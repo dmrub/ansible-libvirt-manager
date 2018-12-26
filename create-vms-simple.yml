@@ -1,0 +1,90 @@
+---
+- name: Create VMs
+  hosts: hypervisor
+  vars:
+    guest_name: centos7
+    img_user: centos
+    domain: vm
+    volume_pool: default
+    libvirt_vm_uri: "qemu:///system"
+    # Override default values from libvirt-vm role
+    libvirt_vms: []
+    libvirt_host_networks: []
+
+    cluster:
+
+      networks:
+        - name: br-vm
+          mode: nat
+          # bridge: virbr0
+          mac: 52:54:00:d7:7d:83
+          ip:
+            address: 192.168.70.1
+            netmask: 255.255.255.0
+            dhcp:
+              range:
+                start: 192.168.70.1
+                end: 192.168.70.254
+
+      nodes:
+
+        - name: "vm1"
+          count: 1
+          vcpus: 2
+          memory_mb: 2048
+          volume:
+            name: "[% 'centos-vm-%d' | format(global_index+1) %]"
+            device: 'disk'
+            format: 'qcow2'
+            clone: 'dmrub-centos7.img'
+            pool: 'default'
+          interfaces:
+            - network: 'br-vm'
+              mac: "52:54:00:8f:64:[% '%02x' | format(global_index) %]"
+              ip: '192.168.70.[% 100 + global_index %]'
+
+        - name: "vm2"
+          count: 1
+          vcpus: 1
+          memory_mb: 1024
+          volume:
+            name: "[% 'centos-vm-%d' | format(global_index+1) %]"
+            device: 'disk'
+            format: 'qcow2'
+            clone: 'dmrub-centos7.img'
+            pool: 'default'
+          interfaces:
+            - network: 'br-vm'
+              mac: "52:54:00:8f:64:[% '%02x' | format(global_index) %]"
+              ip: '192.168.70.[% 100 + global_index %]'
+
+  tasks:
+    - set_fact:
+        libvirt_config: "{{ lookup('template', './create-cluster.yml.j2') | from_yaml }}"
+
+    - name: Show libvirt_vms
+      debug:
+        var: libvirt_config.libvirt_vms
+    - name: Show libvirt_host_networks
+      debug:
+        var: libvirt_config.libvirt_host_networks
+
+    # - name: Test
+    #   debug:
+    #     msg: "Process: {{ lookup('template', './create-cluster.yml.j2')  }}"
+    # - name: Test1
+    #   copy:
+    #     content: "{{ lookup('template', './create-cluster.yml.j2') }}"
+    #     dest: "./output.yml"
+
+    - name: Create VM Networks
+      include_role:
+        name: libvirt-host
+      vars:
+       libvirt_host_networks: "{{ libvirt_config.libvirt_host_networks }}"
+
+    - name: Create VMs
+      include_role:
+        name: libvirt-vm
+      vars:
+       libvirt_vms: "{{ libvirt_config.libvirt_vms }}"
