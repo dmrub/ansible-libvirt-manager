@@ -1,0 +1,98 @@
+---
+- name: Create VMs
+  hosts: hypervisor
+  vars:
+    libvirt_vm_uri: "qemu:///system"
+
+    cluster:
+
+      networks:
+        - name: br-vm
+          mode: nat
+          # bridge: virbr0
+          mac: 52:54:00:d7:7d:83
+          ip:
+            address: 192.168.70.1
+            netmask: 255.255.255.0
+            dhcp:
+              range:
+                start: 192.168.70.1
+                end: 192.168.70.254
+        - name: br-hw
+
+
+      nodes:
+        - name: "kube-01"
+          count: 1
+          vcpus: 4
+          memory_mb: 8192
+          volume:
+            name: "kube-01-vol"
+            device: 'disk'
+            format: 'qcow2'
+            clone: 'dmrub-centos7.img'
+            pool: 'default'
+          interfaces:
+            - network: 'br-vm'
+              mac: "52:54:00:8f:64:[% '%02x' | format(global_index) %]"
+              ip: '192.168.70.[% 100 + global_index %]'
+            - type: bridge
+              source:
+                bridge: br0
+
+        - name: "[% 'kube-%02d' | format(global_index+1) %]"
+          count: 3
+          vcpus: 4
+          memory_mb: 8192
+          volume:
+            name: "[% 'kube-%02d-vol' | format(global_index+1) %]"
+            device: 'disk'
+            format: 'qcow2'
+            clone: 'dmrub-centos7.img'
+            pool: 'default'
+          interfaces:
+            - network: 'br-vm'
+              mac: "52:54:00:8f:64:[% '%02x' | format(global_index) %]"
+              ip: '192.168.70.[% 100 + global_index %]'
+
+        - name: "kube-prom"
+          memory_mb: 4096
+          vcpus: 2
+          volume:
+            name: "[% 'kube-prom-%02d' | format(index+1) %]"
+            device: 'disk'
+            format: 'qcow2'
+            clone: 'dmrub-centos7.img'
+            pool: 'default'
+          interfaces:
+            - network: 'br-vm'
+              mac: "52:54:00:8f:64:[% '%02x' | format(global_index) %]"
+              ip: '192.168.70.[% 100 + global_index %]'
+
+  tasks:
+    - set_fact:
+        libvirt_config: "{{ lookup('template', './create-cluster.yml.j2') | from_yaml }}"
+    - set_fact:
+        libvirt_vms: "{{ libvirt_config.libvirt_vms }}"
+        libvirt_host_networks: "{{ libvirt_config.libvirt_host_networks }}"
+
+    - name: libvirt_vms
+      debug:
+        var: libvirt_vms
+    - name: libvirt_host_networks
+      debug:
+        var: libvirt_host_networks
+
+    - name: Test
+      debug:
+        msg: "Process: {{ lookup('template', './create-cluster.yml.j2')  }}"
+    - name: Test1
+      copy:
+        content: "{{ lookup('template', './create-cluster.yml.j2') }}"
+        dest: "./output.yml"
+    # - name: Echo libvirt_host_networks
+    #   debug: var=libvirt_host_networks
+    # - name: Echo libvirt_vms
+    #   debug: var=libvirt_vms
+    # - name: Echo libvirt_host_networks
+    #   debug: var=result_vms

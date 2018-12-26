@@ -1,0 +1,76 @@
+{% set envoptions = dict(variable_start_string='[%', variable_end_string='%]') %}
+{% macro opt_attr(name, value) -%}
+{% if value is defined -%}
+{{ name }}: {{ value | to_json}}
+{%- endif %}
+{%- endmacro %}
+{% macro mand_attr(name, value) -%}
+{{ name }}: {{ value | to_json}}
+{%- endmacro %}
+
+libvirt_vms:
+{% set ns = namespace(global_index0=0, network=dict()) %}
+{% for cluster_node in cluster.nodes %}
+
+{% for index0 in range(cluster_node.count | default(1)) %}
+  {% set node_name = cluster_node.name | default("[% 'node-%02d' | format(index+1) %]") | render(index=index0, global_index=ns.global_index0, envoptions=envoptions) %}
+
+  - state: present
+    {{ mand_attr('name', node_name) }}
+    {{ opt_attr( 'memory_mb', cluster_node.memory_mb) }}
+    {{ opt_attr( 'vcpus', cluster_node.vcpus) }}
+    {{ opt_attr( 'cpu_mode', cluster_node.cpu_mode ) }}
+    volumes:
+      - {{ mand_attr('name', cluster_node.volume.name | default("[% 'node-%02d-vol' | format(index+1) %]") | render(index=index0, global_index=ns.global_index0, envoptions=envoptions)) }}
+        {{ opt_attr( 'device', cluster_node.volume.device) }}
+        {{ opt_attr( 'format', cluster_node.volume.format) }}
+        {{ opt_attr( 'clone', cluster_node.volume.clone) }}
+        {{ opt_attr( 'pool', cluster_node.volume.pool) }}
+    interfaces:
+      {% for iface in cluster_node.interfaces -%}
+        {% set iface_info = {} %}
+        {% if iface.type is defined and iface.type == 'direct' %}
+        {%   set iface_type = 'direct' %}
+        {% elif (iface.type is defined and iface.type == 'bridge') or (iface.bridge is defined) %}
+        {%   set iface_type = 'bridge' %}
+        {% else %}
+        {%   set iface_type = 'network' %}
+        {% endif %}
+        {% if iface.mac is defined %}
+        {%   set iface_mac = iface.mac | render(index=index0, global_index=ns.global_index0, envoptions=envoptions) %}
+        {%   set iface_info = iface_info | combine({'mac': iface_mac}) %}
+        {% endif %}
+        {% if iface.ip is defined %}
+        {%   set iface_ip = iface.ip | render(index=index0, global_index=ns.global_index0, envoptions=envoptions) %}
+        {%   set iface_info = iface_info | combine({'ip': iface_ip}) %}
+        {% endif %}
+        {% if iface.name is defined %}
+        {%   set iface_name = iface.name | render(index=index0, global_index=ns.global_index0, envoptions=envoptions) %}
+        {%   set iface_info = iface_info | combine({'name': iface_name}) %}
+        {% else  %}
+        {%   set iface_info = iface_info | combine({'name': node_name}) %}
+        {% endif %}
+
+      - {{ mand_attr('type', iface_type) }}
+        {{ opt_attr('source', iface.source) }}
+        {{ opt_attr('network', iface.network) }}
+        {{ opt_attr('mac', iface_mac ) }}
+        {% if iface.network is defined %}
+        {% set _ = ns.network.update({iface.network : (ns.network[iface.network] | default([])) + [iface_info]}) %}
+        {% endif %}
+      {% endfor %}
+{% set ns.global_index0 = ns.global_index0 + 1 %}
+{% endfor %}
+{% endfor %}
+
+libvirt_host_networks:
+{% set ns.global_index0 = 0 %}
+{% for cluster_network in cluster.networks %}
+  {% if cluster_network.name is defined and cluster_network.name in ns.network %}
+  {% set hosts = ns.network[cluster_network.name] %}
+  {% set cluster_network = cluster_network | combine({'ip': {'dhcp': {'hosts': cluster_network.ip.dhcp.hosts | default([]) + hosts}}}, recursive=True) %}
+  {% endif %}
+
+  - {{ cluster_network | to_json }}
+{% set ns.global_index0 = ns.global_index0 + 1 %}
+{% endfor %}
