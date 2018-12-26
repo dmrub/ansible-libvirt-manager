@@ -8,8 +8,8 @@ ANSIBLE_INVENTORY_DIR=$ROOT_DIR/inventory
 ANSIBLE_INVENTORY=$ANSIBLE_INVENTORY_DIR/inventory.cfg
 
 CFG_CONFIG_DIR=${CFG_CONFIG_DIR:-~/.ansible}
-CFG_VAULT_FILE=${CFG_VAULT_FILE:-$ROOT_DIR/vault-config.yml}
-CFG_VARS_FILE=${CFG_VARS_FILE:-$ROOT_DIR/vars-config.yml}
+CFG_VAULT_FILE=${CFG_VAULT_FILE:-$ROOT_DIR/ansible-vault.yml}
+CFG_VARS_FILE=${CFG_VARS_FILE:-$ROOT_DIR/ansible-vars.yml}
 
 export ANSIBLE_PRIVATE_KEY_FILE=${ANSIBLE_PRIVATE_KEY_FILE:-~/.ssh/cluster_id_rsa}
 export ANSIBLE_VAULT_PASSWORD_FILE=${ANSIBLE_VAULT_PASSWORD_FILE:-${CFG_CONFIG_DIR}/vault_pass.txt}
@@ -50,11 +50,13 @@ check-config() {
     if [[ ! -e "$ANSIBLE_VAULT_PASSWORD_FILE" ]]; then
         fatal "Ansible vault password file does not exist, run $(abspath "$THIS_DIR/configure.sh")"
     fi
-    if [[ -z "$ANSIBLE_REMOTE_USER" ]]; then
-        fatal "Remote user name is not configured, run $THIS_DIR/configure.sh"
-    fi
-    if [[ ! -e "${ANSIBLE_PRIVATE_KEY_FILE}" || ! -e "${ANSIBLE_PRIVATE_KEY_FILE}.pub" ]]; then
-        fatal "SSH keys ${ANSIBLE_PRIVATE_KEY_FILE} or ${ANSIBLE_PRIVATE_KEY_FILE}.pub missing, run $(abspath "$THIS_DIR/configure.sh")"
+    #if [[ -z "$ANSIBLE_REMOTE_USER" ]]; then
+    #    fatal "Remote user name is not configured, run $THIS_DIR/configure.sh"
+    #fi
+    if [[ -n "${ANSIBLE_PRIVATE_KEY_FILE}" ]]; then
+        if [[ ! -e "${ANSIBLE_PRIVATE_KEY_FILE}" || ! -e "${ANSIBLE_PRIVATE_KEY_FILE}.pub" ]]; then
+            fatal "SSH keys ${ANSIBLE_PRIVATE_KEY_FILE} or ${ANSIBLE_PRIVATE_KEY_FILE}.pub missing, run $(abspath "$THIS_DIR/configure.sh")"
+        fi
     fi
 }
 
@@ -76,6 +78,9 @@ ansible_playbook() {
 run-ansible() {
     local opts
     opts=()
+    if [[ -n "$ANSIBLE_REMOTE_USER" ]]; then
+        opts+=(--user "$ANSIBLE_REMOTE_USER")
+    fi
     if [[ -e "$CFG_VAULT_FILE" ]]; then
         opts+=(--extra-vars @"$CFG_VAULT_FILE")
     fi
@@ -84,12 +89,10 @@ run-ansible() {
     fi
 
     echo "+ ansible -i \"$ANSIBLE_INVENTORY\" \
---user \"$ANSIBLE_REMOTE_USER\" \
 ${opts[*]} \
 $*"
 
     ansible -i "$ANSIBLE_INVENTORY" \
-            --user "$ANSIBLE_REMOTE_USER" \
             "${opts[@]}" \
             "$@"
 }
@@ -100,6 +103,9 @@ run-ansible-playbook() {
 
     local opts
     opts=()
+    if [[ -n "$ANSIBLE_REMOTE_USER" ]]; then
+        opts+=(--user "$ANSIBLE_REMOTE_USER")
+    fi
     if [[ -e "$CFG_VAULT_FILE" ]]; then
         opts+=(--extra-vars @"$CFG_VAULT_FILE")
     fi
@@ -107,11 +113,9 @@ run-ansible-playbook() {
         opts+=(--extra-vars @"$CFG_VARS_FILE")
     fi
     echo "+ ansible-playbook --inventory \"$ANSIBLE_INVENTORY\" \
---user \"$ANSIBLE_REMOTE_USER\" \
 ${opts[*]} \
 $*"
     ansible-playbook --inventory "$ANSIBLE_INVENTORY" \
-                     --user "$ANSIBLE_REMOTE_USER" \
                      "${opts[@]}" \
                      "$@"
 }
