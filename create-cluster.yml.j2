@@ -25,6 +25,7 @@ libvirt_vms:
         {{ opt_attr( 'device', cluster_node.volume.device) }}
         {{ opt_attr( 'format', cluster_node.volume.format) }}
         {{ opt_attr( 'clone', cluster_node.volume.clone) }}
+        {{ opt_attr( 'backing_image', cluster_node.volume.backing_image) }}
         {{ opt_attr( 'pool', cluster_node.volume.pool) }}
     interfaces:
       {% for iface in cluster_node.interfaces -%}
