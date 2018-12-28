@@ -54,6 +54,7 @@ libvirt_vms:
       - {{ mand_attr('type', iface_type) }}
         {{ opt_attr('source', iface.source) }}
         {{ opt_attr('network', iface.network) }}
+        {{ opt_attr('bridge', iface.bridge) }}
         {{ opt_attr('mac', iface_mac ) }}
         {% if iface.network is defined %}
         {% set _ = ns.network.update({iface.network : (ns.network[iface.network] | default([])) + [iface_info]}) %}
