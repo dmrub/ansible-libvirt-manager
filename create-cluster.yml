@@ -3,6 +3,12 @@
   hosts: hypervisor
   vars:
     libvirt_vm_uri: "qemu:///system"
+    cluster_vol_pool: 'default'
+    cluster_node_prefix: "kube-"
+    cluster_ip_prefix: "192.168.70."
+    cluster_mac_prefix: "52:54:00:8f:64:"
+    cluster_node_user: vagrant
+    cluster_node_pass: vagrant
 
     cluster:
 
@@ -12,87 +18,148 @@
           # bridge: virbr0
           mac: 52:54:00:d7:7d:83
           ip:
-            address: 192.168.70.1
+            address: "{{cluster_ip_prefix}}1"
             netmask: 255.255.255.0
             dhcp:
               range:
-                start: 192.168.70.1
-                end: 192.168.70.254
-        - name: br-hw
-
+                start: "{{cluster_ip_prefix}}1"
+                end: "{{cluster_ip_prefix}}254"
 
       nodes:
-        - name: "kube-01"
+        - name: "{{cluster_node_prefix}}01"
           count: 1
           vcpus: 4
           memory_mb: 8192
           volume:
-            name: "kube-01-vol"
+            name: "{{cluster_node_prefix}}01-vol"
             device: 'disk'
             format: 'qcow2'
-            clone: 'dmrub-centos7.img'
-            pool: 'default'
+            backing_image: 'dmrub-centos7.img'
+            pool: '{{ cluster_vol_pool }}'
           interfaces:
             - network: 'br-vm'
-              mac: "52:54:00:8f:64:[% '%02x' | format(global_index) %]"
-              ip: '192.168.70.[% 100 + global_index %]'
-            - type: bridge
-              source:
-                bridge: br0
+              mac: "{{cluster_mac_prefix}}[% '%02x' | format(global_index) %]"
+              ip: '{{cluster_ip_prefix}}[% 100 + global_index %]'
 
-        - name: "[% 'kube-%02d' | format(global_index+1) %]"
-          count: 3
+        - name: "[% '{{cluster_node_prefix}}%02d' | format(global_index+1) %]"
+          count: 2
           vcpus: 4
           memory_mb: 8192
           volume:
-            name: "[% 'kube-%02d-vol' | format(global_index+1) %]"
+            name: "[% '{{cluster_node_prefix}}%02d-vol' | format(global_index+1) %]"
             device: 'disk'
             format: 'qcow2'
-            clone: 'dmrub-centos7.img'
-            pool: 'default'
+            backing_image: 'dmrub-centos7.img'
+            pool: '{{ cluster_vol_pool }}'
           interfaces:
             - network: 'br-vm'
-              mac: "52:54:00:8f:64:[% '%02x' | format(global_index) %]"
-              ip: '192.168.70.[% 100 + global_index %]'
+              mac: "{{cluster_mac_prefix}}[% '%02x' | format(global_index) %]"
+              ip: '{{cluster_ip_prefix}}[% 100 + global_index %]'
 
-        - name: "kube-prom"
-          memory_mb: 4096
+        - name: "{{cluster_node_prefix}}prom"
           vcpus: 2
+          memory_mb: 4096
           volume:
-            name: "[% 'kube-prom-%02d' | format(index+1) %]"
+            name: "[% '{{cluster_node_prefix}}prom-%02d-vol' | format(index+1) %]"
             device: 'disk'
             format: 'qcow2'
-            clone: 'dmrub-centos7.img'
-            pool: 'default'
+            backing_image: 'dmrub-centos7.img'
+            pool: '{{ cluster_vol_pool }}'
           interfaces:
             - network: 'br-vm'
-              mac: "52:54:00:8f:64:[% '%02x' | format(global_index) %]"
-              ip: '192.168.70.[% 100 + global_index %]'
+              mac: "{{cluster_mac_prefix}}[% '%02x' | format(global_index) %]"
+              ip: '{{cluster_ip_prefix}}[% 100 + global_index %]'
 
   tasks:
+
     - set_fact:
         libvirt_config: "{{ lookup('template', './create-cluster.yml.j2') | from_yaml }}"
-    - set_fact:
-        libvirt_vms: "{{ libvirt_config.libvirt_vms }}"
-        libvirt_host_networks: "{{ libvirt_config.libvirt_host_networks }}"
 
-    - name: libvirt_vms
+    - name: Show libvirt_vms
       debug:
-        var: libvirt_vms
-    - name: libvirt_host_networks
+        var: libvirt_config.libvirt_vms
+    - name: Show libvirt_host_networks
       debug:
-        var: libvirt_host_networks
+        var: libvirt_config.libvirt_host_networks
 
-    - name: Test
+    - name: Print IP/Name
       debug:
-        msg: "Process: {{ lookup('template', './create-cluster.yml.j2')  }}"
-    - name: Test1
-      copy:
-        content: "{{ lookup('template', './create-cluster.yml.j2') }}"
-        dest: "./output.yml"
+        msg: "{{ item.1.ip }} {{ item.1.name }}"
+      loop: "{{ libvirt_config.libvirt_host_networks | subelements('ip.dhcp.hosts', skip_missing=True) }}"
+      when: item.1.ip is defined and item.1.name is defined
+
+    - add_host:
+        name: "{{ item.1.name }}"
+        groups: created_nodes
+        ansible_user: "{{ cluster_node_user }}"
+        ansible_host: "{{ item.1.ip }}"
+        ansible_ssh_pass: "{{ cluster_node_pass }}"
+        ansible_become_pass: "{{ cluster_node_pass }}"
+      loop: "{{ libvirt_config.libvirt_host_networks | subelements('ip.dhcp.hosts', skip_missing=True) }}"
+      when: item.1.ip is defined and item.1.name is defined
+
+    - name: Create VM Networks
+      include_role:
+        name: libvirt-host
+      vars:
+       libvirt_host_networks: "{{ libvirt_config.libvirt_host_networks }}"
+
+    - name: Create VMs
+      include_role:
+        name: libvirt-vm
+      vars:
+       libvirt_vms: "{{ libvirt_config.libvirt_vms }}"
+
     # - name: Echo libvirt_host_networks
     #   debug: var=libvirt_host_networks
     # - name: Echo libvirt_vms
     #   debug: var=libvirt_vms
     # - name: Echo libvirt_host_networks
     #   debug: var=result_vms
+
+- name: Configure nodes
+  hosts: created_nodes
+  become_method: sudo
+  gather_facts: false
+  tasks:
+    - name: Print hosts
+      debug:
+        msg: "{{ hostvars[inventory_hostname].ansible_host  }}"
+    - name: Wait for SSH banners
+      wait_for:
+        port: 22
+        host: "{{ hostvars[inventory_hostname].ansible_host }}"
+        search_regex: OpenSSH
+        delay: 5
+      delegate_to: hypervisor
+    - name: Set hostname
+      become: yes
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Gather information
+      setup:
+      delegate_to: "{{item}}"
+      delegate_facts: True
+      with_items: "{{ groups['created_nodes'] }}"
+
+    - name: DEBUG
+      debug: msg="item = {{item}}, host_aliases = {{ hostvars[item].host_aliases|default('') }}, address = {{ hostvars[item].ansible_default_ipv4|default(omit) }}"
+      with_items: "{{ groups['created_nodes'] }}"
+
+    - name: Remove hosts
+      become: yes
+      lineinfile: dest=/etc/hosts regexp='^\S+\s+{{ item }}(\s.*)?$' state=absent
+      with_items: "{{groups['created_nodes']}}"
+
+    - name: Add mappings to /etc/hosts
+      become: yes
+      blockinfile:
+        dest: /etc/hosts
+        block: |
+          {% for item in groups['created_nodes'] %}
+          {% set host_interface = hostvars[item].host_interface | default( hostvars[item].ansible_default_ipv4.alias ) %}
+          {% set host_ipv4 = hostvars[item].host_ipv4 | default( hostvars[item]['ansible_' + host_interface]['ipv4']['address'] ) %}
+          {{ host_ipv4 }} {{item}} {{ hostvars[item].host_aliases|default('') }}
+          {% endfor %}
+        marker: "# Ansible inventory hosts {mark}"
